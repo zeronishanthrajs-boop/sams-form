@@ -38,7 +38,9 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
   config,
   onSuccess,
 }) => {
-  const [formData, setFormData] = useState<Omit<EventReportData, "photographs">>({
+  const [formData, setFormData] = useState<
+    Omit<EventReportData, "photographs" | "brochureImages" | "participantListImages">
+  >({
     eventName: "",
     eventDate: new Date().toISOString().split("T")[0],
     eventVenue: "",
@@ -52,6 +54,8 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
   });
 
   const [photos, setPhotos] = useState<{ id: string; file: File; preview: string }[]>([]);
+  const [brochures, setBrochures] = useState<{ id: string; file: File; preview: string }[]>([]);
+  const [participantLists, setParticipantLists] = useState<{ id: string; file: File; preview: string }[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -116,6 +120,92 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
 
   const removePhoto = (id: string) => {
     setPhotos((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) URL.revokeObjectURL(target.preview);
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  // Brochure Upload Handler
+  const handleBrochureUpload = (files: FileList | null) => {
+    if (!files) return;
+
+    const newBrochures: { id: string; file: File; preview: string }[] = [];
+    const itemErrors: string[] = [];
+
+    Array.from(files).forEach((file) => {
+      if (!file.type.startsWith("image/")) {
+        itemErrors.push(`${file.name} is not a valid image file.`);
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        itemErrors.push(`${file.name} exceeds 5MB size limit.`);
+        return;
+      }
+
+      const id = Math.random().toString(36).substring(2, 9);
+      const preview = URL.createObjectURL(file);
+      newBrochures.push({ id, file, preview });
+    });
+
+    if (itemErrors.length > 0) {
+      setErrors((prev) => ({ ...prev, brochureImages: itemErrors.join(" ") }));
+    } else {
+      setErrors((prev) => {
+        const copy = { ...prev };
+        delete copy.brochureImages;
+        return copy;
+      });
+    }
+
+    setBrochures((prev) => [...prev, ...newBrochures]);
+  };
+
+  const removeBrochure = (id: string) => {
+    setBrochures((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) URL.revokeObjectURL(target.preview);
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
+  // Participant List Upload Handler
+  const handleParticipantListUpload = (files: FileList | null) => {
+    if (!files) return;
+
+    const newLists: { id: string; file: File; preview: string }[] = [];
+    const itemErrors: string[] = [];
+
+    Array.from(files).forEach((file) => {
+      if (!file.type.startsWith("image/")) {
+        itemErrors.push(`${file.name} is not a valid image file.`);
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        itemErrors.push(`${file.name} exceeds 5MB size limit.`);
+        return;
+      }
+
+      const id = Math.random().toString(36).substring(2, 9);
+      const preview = URL.createObjectURL(file);
+      newLists.push({ id, file, preview });
+    });
+
+    if (itemErrors.length > 0) {
+      setErrors((prev) => ({ ...prev, participantListImages: itemErrors.join(" ") }));
+    } else {
+      setErrors((prev) => {
+        const copy = { ...prev };
+        delete copy.participantListImages;
+        return copy;
+      });
+    }
+
+    setParticipantLists((prev) => [...prev, ...newLists]);
+  };
+
+  const removeParticipantList = (id: string) => {
+    setParticipantLists((prev) => {
       const target = prev.find((p) => p.id === id);
       if (target) URL.revokeObjectURL(target.preview);
       return prev.filter((p) => p.id !== id);
@@ -202,6 +292,16 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
       // Append photographs
       photos.forEach((photoObj) => {
         payload.append("photographs", photoObj.file);
+      });
+
+      // Append brochure images
+      brochures.forEach((item) => {
+        payload.append("brochureImages", item.file);
+      });
+
+      // Append participant list images
+      participantLists.forEach((item) => {
+        payload.append("participantListImages", item.file);
       });
 
       const res = await fetch("/api/generate-report", {
@@ -534,26 +634,97 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
           </div>
         </div>
 
-        {/* SECTION 3: Event Photographs & Additional Info */}
+        {/* SECTION 3: Event Documentation, Photographs & Supplemental Info */}
         <div>
           <div className="flex items-center gap-2 border-b border-slate-200 pb-3 mb-6">
             <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-900 flex items-center justify-center font-bold text-sm">
               3
             </div>
             <h3 className="font-bold text-slate-900 text-base sm:text-lg">
-              Event Photographs & Supplemental Information
+              Event Documentation, Photographs & Supplemental Information
             </h3>
           </div>
 
           <div className="space-y-6">
-            {/* Photographs Dropzone */}
+            {/* 1. Event Brochure / Flyer / Circular */}
             <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <FileText className="w-4 h-4 text-blue-700" />
+                Event Brochure / Flyer / Circular <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+
+              <div className="border-2 border-dashed border-slate-300 rounded-2xl p-5 text-center hover:border-blue-500 transition-colors bg-slate-50/50">
+                <input
+                  type="file"
+                  id="brochure-upload"
+                  multiple
+                  accept="image/png, image/jpeg, image/webp"
+                  onChange={(e) => handleBrochureUpload(e.target.files)}
+                  className="hidden"
+                  disabled={isSubmitting}
+                />
+                <label
+                  htmlFor="brochure-upload"
+                  className="cursor-pointer flex flex-col items-center justify-center gap-2"
+                >
+                  <div className="w-11 h-11 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center">
+                    <PlusCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">
+                      Click to upload event brochure / circular
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Brochure, invitation, or event poster (PNG, JPG, or WebP up to 5MB)
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {errors.brochureImages && (
+                <p className="mt-1.5 text-xs text-red-600 font-medium flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" /> {errors.brochureImages}
+                </p>
+              )}
+
+              {/* Brochure Previews */}
+              {brochures.length > 0 && (
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {brochures.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-xs aspect-4/3 bg-slate-900"
+                    >
+                      <img
+                        src={item.preview}
+                        alt={`Brochure preview ${index + 1}`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeBrochure(item.id)}
+                        className="absolute top-2 right-2 p-1.5 bg-red-600/90 text-white rounded-lg opacity-90 hover:opacity-100 hover:bg-red-700 transition-all shadow-md"
+                        title="Remove brochure"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 text-[10px] text-white text-center">
+                        Brochure #{index + 1}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 2. Event Photographs */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
                 <ImageIcon className="w-4 h-4 text-blue-700" />
                 Event Photographs <span className="text-slate-400 font-normal">(Optional)</span>
               </label>
 
-              <div className="border-2 border-dashed border-slate-300 rounded-2xl p-6 text-center hover:border-blue-500 transition-colors bg-slate-50/50">
+              <div className="border-2 border-dashed border-slate-300 rounded-2xl p-5 text-center hover:border-blue-500 transition-colors bg-slate-50/50">
                 <input
                   type="file"
                   id="photo-upload"
@@ -567,15 +738,15 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
                   htmlFor="photo-upload"
                   className="cursor-pointer flex flex-col items-center justify-center gap-2"
                 >
-                  <div className="w-12 h-12 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center">
-                    <PlusCircle className="w-6 h-6" />
+                  <div className="w-11 h-11 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center">
+                    <PlusCircle className="w-5 h-5" />
                   </div>
                   <div>
                     <p className="text-sm font-bold text-slate-800">
                       Click to upload event photos
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      PNG, JPG, or WebP up to 5MB each
+                      Geo-tagged / high-res photos (PNG, JPG, or WebP up to 5MB each)
                     </p>
                   </div>
                 </label>
@@ -617,7 +788,78 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
               )}
             </div>
 
-            {/* Additional Information */}
+            {/* 3. Participant List / Attendance Sheet */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-blue-700" />
+                Participant List / Attendance Sheet <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+
+              <div className="border-2 border-dashed border-slate-300 rounded-2xl p-5 text-center hover:border-blue-500 transition-colors bg-slate-50/50">
+                <input
+                  type="file"
+                  id="participant-upload"
+                  multiple
+                  accept="image/png, image/jpeg, image/webp"
+                  onChange={(e) => handleParticipantListUpload(e.target.files)}
+                  className="hidden"
+                  disabled={isSubmitting}
+                />
+                <label
+                  htmlFor="participant-upload"
+                  className="cursor-pointer flex flex-col items-center justify-center gap-2"
+                >
+                  <div className="w-11 h-11 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center">
+                    <PlusCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">
+                      Click to upload participant list / attendance sheet
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Scanned attendance sheet or attendee roster (PNG, JPG, or WebP up to 5MB)
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {errors.participantListImages && (
+                <p className="mt-1.5 text-xs text-red-600 font-medium flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" /> {errors.participantListImages}
+                </p>
+              )}
+
+              {/* Participant List Previews */}
+              {participantLists.length > 0 && (
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {participantLists.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-xs aspect-4/3 bg-slate-900"
+                    >
+                      <img
+                        src={item.preview}
+                        alt={`Participant list preview ${index + 1}`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeParticipantList(item.id)}
+                        className="absolute top-2 right-2 p-1.5 bg-red-600/90 text-white rounded-lg opacity-90 hover:opacity-100 hover:bg-red-700 transition-all shadow-md"
+                        title="Remove participant list"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 text-[10px] text-white text-center">
+                        Attendance Page #{index + 1}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 4. Additional Information */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
                 Additional Information <span className="text-slate-400 font-normal">(Optional)</span>

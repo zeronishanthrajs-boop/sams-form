@@ -172,7 +172,7 @@ export default function Home() {
           <div className="flex flex-col sm:flex-row items-center gap-4 text-slate-400 text-[11px]">
             <span>{config.naacAccreditation}</span>
             <span className="hidden sm:inline">&bull;</span>
-            <span>NAAC Event Report Generator v1.0</span>
+            <span>Event Report Generator</span>
           </div>
         </div>
       </footer>

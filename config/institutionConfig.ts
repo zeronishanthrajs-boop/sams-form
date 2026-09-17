@@ -23,7 +23,7 @@ export interface InstitutionConfig {
 }
 
 export const defaultInstitutionConfig: InstitutionConfig = {
-  collegeName: process.env.NEXT_PUBLIC_COLLEGE_NAME || "Sambhram Academy of Management Studies (SAMS)",
+  collegeName: process.env.NEXT_PUBLIC_COLLEGE_NAME || "Sambhram Academy of Management Studies",
   collegeAddress: process.env.NEXT_PUBLIC_COLLEGE_ADDRESS || "M.S. Palya, Jalahalli East, Bangalore – 560097, Karnataka, India",
   collegeAffiliation: process.env.NEXT_PUBLIC_COLLEGE_AFFILIATION || "Affiliated to Bengaluru City University (BCU) | Recognized by Govt. of Karnataka",
   naacAccreditation: process.env.NEXT_PUBLIC_NAAC_ACCREDITATION || "Accredited by NAAC | Affiliated to Bengaluru City University (BCU) | Recognized by Govt. of Karnataka",
@@ -31,7 +31,7 @@ export const defaultInstitutionConfig: InstitutionConfig = {
   academicYear: process.env.NEXT_PUBLIC_ACADEMIC_YEAR || "2025–2026",
   officeEmail: process.env.OFFICE_EMAIL || process.env.NEXT_PUBLIC_OFFICE_EMAIL || "sams@sambhram.org",
   collegeWebsite: process.env.NEXT_PUBLIC_COLLEGE_WEBSITE || "www.sambhram.org",
-  logoUrl: process.env.NEXT_PUBLIC_COLLEGE_LOGO || "/logo.jpg",
+  logoUrl: process.env.NEXT_PUBLIC_COLLEGE_LOGO || "/images.jpg",
   primaryColor: "#0F2C59",
   secondaryColor: "#D4AF37",
   pdfFilenameFormat: "Event_Report_{Event_Name}_{Event_Date}.pdf",

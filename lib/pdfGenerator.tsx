@@ -24,6 +24,8 @@ export interface EventReportData {
   programOutcomes: string;
   additionalInfo?: string;
   photographs?: string[]; // Base64 data URLs or http URLs
+  brochureImages?: string[]; // Base64 data URLs or http URLs
+  participantListImages?: string[]; // Base64 data URLs or http URLs
 }
 
 const styles = StyleSheet.create({
@@ -40,19 +42,21 @@ const styles = StyleSheet.create({
     borderBottomColor: "#0F2C59",
     paddingBottom: 10,
     marginBottom: 15,
-    flexDirection: "row",
+    flexDirection: "column",
     alignItems: "center",
   },
+  logoWrapper: {
+    alignItems: "center",
+    marginBottom: 6,
+  },
   logo: {
-    width: 60,
-    height: 60,
-    marginRight: 15,
+    width: 260,
+    height: 52,
     objectFit: "contain",
   },
   logoPlaceholder: {
     width: 60,
     height: 60,
-    marginRight: 15,
     backgroundColor: "#0F2C59",
     borderRadius: 30,
     justifyContent: "center",
@@ -61,10 +65,11 @@ const styles = StyleSheet.create({
   logoText: {
     color: "#FFFFFF",
     fontWeight: "bold",
-    fontSize: 14,
+    fontSize: 16,
   },
   headerTextContainer: {
-    flex: 1,
+    width: "100%",
+    alignItems: "center",
   },
   collegeTitle: {
     fontSize: 14,
@@ -188,6 +193,32 @@ const styles = StyleSheet.create({
     textAlign: "center",
     marginTop: 4,
   },
+  documentGrid: {
+    flexDirection: "column",
+    marginTop: 6,
+  },
+  documentCard: {
+    width: "100%",
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 4,
+    padding: 6,
+    backgroundColor: "#FAFAFA",
+    alignItems: "center",
+  },
+  documentImg: {
+    maxWidth: "100%",
+    maxHeight: 450,
+    objectFit: "contain",
+    borderRadius: 2,
+  },
+  documentCaption: {
+    fontSize: 7.5,
+    color: "#64748B",
+    textAlign: "center",
+    marginTop: 4,
+  },
   signatureContainer: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -232,34 +263,21 @@ const styles = StyleSheet.create({
 });
 
 function getResolvedLogoUrl(logoUrl?: string): string | undefined {
-  const url = logoUrl || "/logo.jpg";
+  // Explicit target logo path as specified
+  const explicitImagePath = "C:\\Users\\sakth\\OneDrive\\Pictures\\sams form\\images.jpg";
 
-  if (url.startsWith("data:")) {
-    return url;
-  }
-
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    return url;
-  }
-
-  if (typeof window !== "undefined") {
-    if (url.startsWith("/")) {
-      return window.location.origin + url;
-    }
-    return url;
-  }
+  const candidatePaths = [
+    explicitImagePath,
+    path.join(process.cwd(), "images.jpg"),
+    path.join(process.cwd(), "public", "images.jpg"),
+    logoUrl && path.isAbsolute(logoUrl) ? logoUrl : null,
+    logoUrl ? path.join(process.cwd(), logoUrl.startsWith("/") ? logoUrl.slice(1) : logoUrl) : null,
+    logoUrl ? path.join(process.cwd(), "public", logoUrl.startsWith("/") ? logoUrl.slice(1) : logoUrl) : null,
+    path.join(process.cwd(), "public", "logo.jpg"),
+    path.join(process.cwd(), "logo.jpg"),
+  ].filter(Boolean) as string[];
 
   try {
-    const cleanPath = url.startsWith("/") ? url.slice(1) : url;
-    const candidatePaths = [
-      path.join(process.cwd(), "public", cleanPath),
-      path.join(process.cwd(), cleanPath),
-      path.join(process.cwd(), "public", "logo.png"),
-      path.join(process.cwd(), "public", "logo.jpg"),
-      path.join(process.cwd(), "logo.png"),
-      path.join(process.cwd(), "logo.jpg"),
-    ];
-
     for (const p of candidatePaths) {
       if (fs.existsSync(p)) {
         const buffer = fs.readFileSync(p);
@@ -276,6 +294,23 @@ function getResolvedLogoUrl(logoUrl?: string): string | undefined {
     console.error("Error resolving logo image for PDF:", e);
   }
 
+  const url = logoUrl || "/images.jpg";
+
+  if (url.startsWith("data:")) {
+    return url;
+  }
+
+  if (url.startsWith("http://") || url.startsWith("https://")) {
+    return url;
+  }
+
+  if (typeof window !== "undefined") {
+    if (url.startsWith("/")) {
+      return window.location.origin + url;
+    }
+    return url;
+  }
+
   return url;
 }
 
@@ -289,6 +324,27 @@ export const EventReportPdfDocument: React.FC<PdfDocumentProps> = ({
   config,
 }) => {
   const logoSrc = getResolvedLogoUrl(config.logoUrl);
+  const cleanCollegeName = (config.collegeName || "")
+    .replace(/\s*\(SAMS\)/gi, "")
+    .trim();
+
+  let sectionCounter = 3;
+  const brochureSecNum =
+    data.brochureImages && data.brochureImages.length > 0
+      ? ++sectionCounter
+      : null;
+  const photoSecNum =
+    data.photographs && data.photographs.length > 0
+      ? ++sectionCounter
+      : null;
+  const participantSecNum =
+    data.participantListImages && data.participantListImages.length > 0
+      ? ++sectionCounter
+      : null;
+  const additionalSecNum =
+    data.additionalInfo && data.additionalInfo.trim().length > 0
+      ? ++sectionCounter
+      : null;
 
   return (
     <PdfDocument title={`Event Report - ${data.eventName}`}>
@@ -296,17 +352,21 @@ export const EventReportPdfDocument: React.FC<PdfDocumentProps> = ({
         {/* Institutional Header */}
         <PdfView style={styles.headerContainer}>
           {logoSrc ? (
-            <PdfImage style={styles.logo} src={logoSrc} />
+            <PdfView style={styles.logoWrapper}>
+              <PdfImage style={styles.logo} src={logoSrc} />
+            </PdfView>
           ) : (
-            <PdfView style={styles.logoPlaceholder}>
-              <PdfText style={styles.logoText}>
-                {config.collegeName.substring(0, 2).toUpperCase()}
-              </PdfText>
+            <PdfView style={styles.logoWrapper}>
+              <PdfView style={styles.logoPlaceholder}>
+                <PdfText style={styles.logoText}>
+                  {config.collegeName.substring(0, 2).toUpperCase()}
+                </PdfText>
+              </PdfView>
             </PdfView>
           )}
 
           <PdfView style={styles.headerTextContainer}>
-            <PdfText style={styles.collegeTitle}>{config.collegeName}</PdfText>
+            <PdfText style={styles.collegeTitle}>{cleanCollegeName}</PdfText>
             <PdfText style={styles.collegeSubText}>{config.collegeAddress}</PdfText>
             <PdfText style={styles.collegeSubText}>
               {config.collegeAffiliation}
@@ -369,13 +429,36 @@ export const EventReportPdfDocument: React.FC<PdfDocumentProps> = ({
           <PdfText style={styles.sectionBody}>{data.programOutcomes}</PdfText>
         </PdfView>
 
-        {/* Section 4: Event Photographs (If provided) */}
-        {data.photographs && data.photographs.length > 0 && (
-          <PdfView style={styles.section} wrap={false}>
-            <PdfText style={styles.sectionTitle}>4. EVENT PHOTOGRAPHS</PdfText>
+        {/* Section: Event Brochure / Flyer (If provided) */}
+        {brochureSecNum && data.brochureImages && (
+          <PdfView style={styles.section}>
+            <PdfText style={styles.sectionTitle}>
+              {`${brochureSecNum}. EVENT BROCHURE / CIRCULAR`}
+            </PdfText>
+            <PdfView style={styles.documentGrid}>
+              {data.brochureImages.map((brochure, index) => (
+                <PdfView key={index} style={styles.documentCard} wrap={false}>
+                  <PdfImage style={styles.documentImg} src={brochure} />
+                  <PdfText style={styles.documentCaption}>
+                    {data.brochureImages!.length > 1
+                      ? `Brochure Page ${index + 1} - ${data.eventName}`
+                      : `Official Event Brochure - ${data.eventName}`}
+                  </PdfText>
+                </PdfView>
+              ))}
+            </PdfView>
+          </PdfView>
+        )}
+
+        {/* Section: Event Photographs (If provided) */}
+        {photoSecNum && data.photographs && (
+          <PdfView style={styles.section}>
+            <PdfText style={styles.sectionTitle}>
+              {`${photoSecNum}. EVENT PHOTOGRAPHS`}
+            </PdfText>
             <PdfView style={styles.photoGrid}>
               {data.photographs.map((photo, index) => (
-                <PdfView key={index} style={styles.photoCard}>
+                <PdfView key={index} style={styles.photoCard} wrap={false}>
                   <PdfImage style={styles.photoImg} src={photo} />
                   <PdfText style={styles.photoCaption}>
                     Figure {index + 1}: Event Highlight - {data.eventName}
@@ -386,10 +469,33 @@ export const EventReportPdfDocument: React.FC<PdfDocumentProps> = ({
           </PdfView>
         )}
 
-        {/* Section 5: Additional Information (If provided) */}
-        {data.additionalInfo && data.additionalInfo.trim().length > 0 && (
+        {/* Section: Participant List / Attendance Sheet (If provided) */}
+        {participantSecNum && data.participantListImages && (
           <PdfView style={styles.section}>
-            <PdfText style={styles.sectionTitle}>5. ADDITIONAL INFORMATION</PdfText>
+            <PdfText style={styles.sectionTitle}>
+              {`${participantSecNum}. PARTICIPANT LIST / ATTENDANCE SHEET`}
+            </PdfText>
+            <PdfView style={styles.documentGrid}>
+              {data.participantListImages.map((sheet, index) => (
+                <PdfView key={index} style={styles.documentCard} wrap={false}>
+                  <PdfImage style={styles.documentImg} src={sheet} />
+                  <PdfText style={styles.documentCaption}>
+                    {data.participantListImages!.length > 1
+                      ? `Participant Attendance Sheet Page ${index + 1} (${data.numberOfParticipants} Participants)`
+                      : `Participant Attendance Sheet - ${data.eventName} (${data.numberOfParticipants} Participants)`}
+                  </PdfText>
+                </PdfView>
+              ))}
+            </PdfView>
+          </PdfView>
+        )}
+
+        {/* Section: Additional Information (If provided) */}
+        {additionalSecNum && data.additionalInfo && (
+          <PdfView style={styles.section}>
+            <PdfText style={styles.sectionTitle}>
+              {`${additionalSecNum}. ADDITIONAL INFORMATION`}
+            </PdfText>
             <PdfText style={styles.sectionBody}>{data.additionalInfo}</PdfText>
           </PdfView>
         )}
@@ -415,13 +521,13 @@ export const EventReportPdfDocument: React.FC<PdfDocumentProps> = ({
             <PdfText style={styles.signatureTitle}>
               {config.signatureTitles.principal}
             </PdfText>
-            <PdfText style={styles.signatureDept}>{config.collegeName}</PdfText>
+            <PdfText style={styles.signatureDept}>{cleanCollegeName}</PdfText>
           </PdfView>
         </PdfView>
 
         {/* Footer */}
         <PdfView style={styles.footer} fixed>
-          <PdfText>{config.collegeName} — NAAC Documentation Portal</PdfText>
+          <PdfText>{cleanCollegeName}</PdfText>
           <PdfText
             render={({ pageNumber, totalPages }) =>
               `Page ${pageNumber} of ${totalPages}`

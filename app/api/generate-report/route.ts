@@ -58,6 +58,30 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Handle brochure images from multipart form data
+      const brochureFiles = formData.getAll("brochureImages") as File[];
+      const brochureImages: string[] = [];
+
+      for (const file of brochureFiles) {
+        if (file && typeof file === "object" && file.size > 0) {
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const mimeType = file.type || "image/jpeg";
+          brochureImages.push(`data:${mimeType};base64,${buffer.toString("base64")}`);
+        }
+      }
+
+      // Handle participant list images from multipart form data
+      const participantFiles = formData.getAll("participantListImages") as File[];
+      const participantListImages: string[] = [];
+
+      for (const file of participantFiles) {
+        if (file && typeof file === "object" && file.size > 0) {
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const mimeType = file.type || "image/jpeg";
+          participantListImages.push(`data:${mimeType};base64,${buffer.toString("base64")}`);
+        }
+      }
+
       eventData = {
         eventName,
         eventDate,
@@ -70,6 +94,8 @@ export async function POST(req: NextRequest) {
         programOutcomes,
         additionalInfo,
         photographs,
+        brochureImages,
+        participantListImages,
       };
     } else {
       const body = await req.json();
