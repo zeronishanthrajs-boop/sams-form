@@ -128,6 +128,20 @@ export const ConfigModal: React.FC<ConfigModalProps> = ({
 
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1">
+                  University Affiliation
+                </label>
+                <input
+                  type="text"
+                  name="collegeAffiliation"
+                  value={formData.collegeAffiliation}
+                  onChange={handleChange}
+                  className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1">
                   NAAC Accreditation Details
                 </label>
                 <input
