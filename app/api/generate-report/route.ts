@@ -185,8 +185,33 @@ export async function POST(req: NextRequest) {
 
     // Merge any uploaded feedback PDFs using pdf-lib
     if (feedbackPdfBuffers.length > 0) {
-      const { PDFDocument } = await import("pdf-lib");
+      const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
       const mainDoc = await PDFDocument.load(pdfBuffer);
+
+      // Insert a clearly labeled separator page before the appended PDF pages
+      const separatorPage = mainDoc.addPage([595.28, 841.89]); // A4 size
+      const boldFont = await mainDoc.embedFont(StandardFonts.HelveticaBold);
+      const regularFont = await mainDoc.embedFont(StandardFonts.Helvetica);
+      const darkBlue = rgb(0.059, 0.173, 0.349);
+      const grey = rgb(0.4, 0.4, 0.4);
+
+      separatorPage.drawText("FEEDBACK FORMS", {
+        x: 50, y: 780, size: 20, font: boldFont, color: darkBlue,
+      });
+      separatorPage.drawLine({
+        start: { x: 50, y: 770 }, end: { x: 545, y: 770 },
+        thickness: 1, color: darkBlue,
+      });
+      separatorPage.drawText(
+        `Feedback document(s) submitted for: ${eventData.eventName}`,
+        { x: 50, y: 748, size: 11, font: regularFont, color: grey }
+      );
+      separatorPage.drawText(
+        `Total feedback files attached: ${feedbackPdfBuffers.length}`,
+        { x: 50, y: 728, size: 11, font: regularFont, color: grey }
+      );
+
+      // Append each feedback PDF's pages after the separator
       for (const pdfBuf of feedbackPdfBuffers) {
         try {
           const feedbackDoc = await PDFDocument.load(pdfBuf);
@@ -196,9 +221,11 @@ export async function POST(req: NextRequest) {
           console.warn("Could not merge a feedback PDF page:", e);
         }
       }
+
       const mergedBytes = await mainDoc.save();
       pdfBuffer = Buffer.from(mergedBytes);
     }
+
 
     // Generate filename
     const filename = formatFilename(
