@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
 
     let eventData: EventReportData;
     let customConfig: Partial<InstitutionConfig> = {};
+    let feedbackPdfBuffers: Buffer[] = []; // hoisted for pdf-lib merge step
 
     if (contentType.includes("multipart/form-data")) {
       const formData = await req.formData();
@@ -82,15 +83,33 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      // Handle feedback form images from multipart form data
+      // Handle feedback files from multipart form data (image / PDF / Word)
       const feedbackFiles = formData.getAll("feedbackFormImages") as File[];
       const feedbackFormImages: string[] = [];
+      // feedbackPdfBuffers is declared in outer scope for pdf-lib access after if/else
+      const feedbackWordTexts: Array<{ filename: string; text: string }> = [];
 
       for (const file of feedbackFiles) {
-        if (file && typeof file === "object" && file.size > 0) {
+        if (!file || typeof file !== "object" || file.size === 0) continue;
+
+        if (file.type.startsWith("image/")) {
+          // Images → base64 for embedding in PDF
           const buffer = Buffer.from(await file.arrayBuffer());
-          const mimeType = file.type || "image/jpeg";
-          feedbackFormImages.push(`data:${mimeType};base64,${buffer.toString("base64")}`);
+          feedbackFormImages.push(`data:${file.type};base64,${buffer.toString("base64")}`);
+
+        } else if (file.type === "application/pdf") {
+          // PDFs → keep as raw buffer for pdf-lib merging later
+          feedbackPdfBuffers.push(Buffer.from(await file.arrayBuffer()));
+
+        } else if (
+          file.type === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+          file.name.toLowerCase().endsWith(".docx")
+        ) {
+          // Word .docx → extract text via mammoth
+          const mammoth = await import("mammoth");
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const result = await mammoth.extractRawText({ buffer });
+          feedbackWordTexts.push({ filename: file.name, text: result.value });
         }
       }
 
@@ -109,6 +128,7 @@ export async function POST(req: NextRequest) {
         brochureImages,
         participantListImages,
         feedbackFormImages,
+        feedbackWordTexts,
       };
     } else {
       const body = await req.json();
@@ -160,8 +180,25 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Generate PDF Buffer
-    const pdfBuffer = await generateEventReportPdfBuffer(eventData, config);
+    // Generate main PDF Buffer
+    let pdfBuffer = await generateEventReportPdfBuffer(eventData, config);
+
+    // Merge any uploaded feedback PDFs using pdf-lib
+    if (feedbackPdfBuffers.length > 0) {
+      const { PDFDocument } = await import("pdf-lib");
+      const mainDoc = await PDFDocument.load(pdfBuffer);
+      for (const pdfBuf of feedbackPdfBuffers) {
+        try {
+          const feedbackDoc = await PDFDocument.load(pdfBuf);
+          const copiedPages = await mainDoc.copyPages(feedbackDoc, feedbackDoc.getPageIndices());
+          copiedPages.forEach((page) => mainDoc.addPage(page));
+        } catch (e) {
+          console.warn("Could not merge a feedback PDF page:", e);
+        }
+      }
+      const mergedBytes = await mainDoc.save();
+      pdfBuffer = Buffer.from(mergedBytes);
+    }
 
     // Generate filename
     const filename = formatFilename(

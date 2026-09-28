@@ -214,25 +214,39 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
     });
   };
 
-  // Feedback Form Upload Handler
+  // Feedback Form Upload Handler — accepts images, PDFs, and .docx
   const handleFeedbackFormUpload = (files: FileList | null) => {
     if (!files) return;
+
+    const SUPPORTED_TYPES = [
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "application/pdf",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
 
     const newForms: { id: string; file: File; preview: string }[] = [];
     const itemErrors: string[] = [];
 
     Array.from(files).forEach((file) => {
-      if (!file.type.startsWith("image/")) {
-        itemErrors.push(`${file.name} is not a valid image file.`);
+      const isDocx = file.name.toLowerCase().endsWith(".docx");
+      if (!SUPPORTED_TYPES.includes(file.type) && !isDocx) {
+        itemErrors.push(`${file.name}: unsupported type. Use PNG/JPG/WebP, PDF, or .docx`);
         return;
       }
-      if (file.size > 5 * 1024 * 1024) {
-        itemErrors.push(`${file.name} exceeds 5MB size limit.`);
+      if (file.type === "application/msword" || file.name.toLowerCase().endsWith(".doc")) {
+        itemErrors.push(`${file.name}: .doc format is not supported. Please save as .docx`);
+        return;
+      }
+      if (file.size > 20 * 1024 * 1024) {
+        itemErrors.push(`${file.name} exceeds 20MB size limit.`);
         return;
       }
 
       const id = Math.random().toString(36).substring(2, 9);
-      const preview = URL.createObjectURL(file);
+      // For images, generate a preview URL; for others use empty string (icon shown instead)
+      const preview = file.type.startsWith("image/") ? URL.createObjectURL(file) : "";
       newForms.push({ id, file, preview });
     });
 
@@ -921,7 +935,7 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
                   type="file"
                   id="feedback-upload"
                   multiple
-                  accept="image/png, image/jpeg, image/webp"
+                  accept="image/png,image/jpeg,image/webp,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document,.docx"
                   onChange={(e) => handleFeedbackFormUpload(e.target.files)}
                   className="hidden"
                   disabled={isSubmitting}
@@ -938,7 +952,7 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
                       Click to upload feedback form(s)
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Scanned feedback forms (PNG, JPG, or WebP up to 5MB)
+                      Images (PNG/JPG/WebP), PDF files, or Word documents (.docx) — up to 20MB each
                     </p>
                   </div>
                 </label>
@@ -953,29 +967,47 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
               {/* Feedback Form Previews */}
               {feedbackForms.length > 0 && (
                 <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {feedbackForms.map((item, index) => (
-                    <div
-                      key={item.id}
-                      className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-xs aspect-4/3 bg-slate-900"
-                    >
-                      <img
-                        src={item.preview}
-                        alt={`Feedback form preview ${index + 1}`}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeFeedbackFormItem(item.id)}
-                        className="absolute top-2 right-2 p-1.5 bg-red-600/90 text-white rounded-lg opacity-90 hover:opacity-100 hover:bg-red-700 transition-all shadow-md"
-                        title="Remove feedback form"
+                  {feedbackForms.map((item, index) => {
+                    const isImage = item.file.type.startsWith("image/");
+                    const isPdf = item.file.type === "application/pdf";
+                    return (
+                      <div
+                        key={item.id}
+                        className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-xs aspect-4/3 bg-slate-900"
                       >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 text-[10px] text-white text-center">
-                        Feedback #{index + 1}
+                        {isImage ? (
+                          <img
+                            src={item.preview}
+                            alt={`Feedback form preview ${index + 1}`}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 p-2">
+                            <FileText
+                              className={`w-8 h-8 ${isPdf ? "text-red-400" : "text-blue-400"}`}
+                            />
+                            <span className="text-[9px] text-slate-300 text-center break-all leading-tight px-1">
+                              {item.file.name}
+                            </span>
+                            <span className="text-[8px] text-slate-500 uppercase tracking-wide">
+                              {isPdf ? "PDF" : "DOCX"}
+                            </span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeFeedbackFormItem(item.id)}
+                          className="absolute top-2 right-2 p-1.5 bg-red-600/90 text-white rounded-lg opacity-90 hover:opacity-100 hover:bg-red-700 transition-all shadow-md"
+                          title="Remove feedback form"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 text-[10px] text-white text-center">
+                          Feedback #{index + 1}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

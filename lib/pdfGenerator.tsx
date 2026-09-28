@@ -26,7 +26,9 @@ export interface EventReportData {
   photographs?: string[]; // Base64 data URLs or http URLs
   brochureImages?: string[]; // Base64 data URLs or http URLs
   participantListImages?: string[]; // Base64 data URLs or http URLs
-  feedbackFormImages?: string[]; // Base64 data URLs or http URLs
+  feedbackFormImages?: string[]; // images only — base64 data URLs
+  feedbackWordTexts?: Array<{ filename: string; text: string }>; // extracted .docx text
+  // Note: uploaded PDF files are merged via pdf-lib in route.ts after generation
 }
 
 const styles = StyleSheet.create({
@@ -343,7 +345,8 @@ export const EventReportPdfDocument: React.FC<PdfDocumentProps> = ({
       ? ++sectionCounter
       : null;
   const feedbackSecNum =
-    data.feedbackFormImages && data.feedbackFormImages.length > 0
+    (data.feedbackFormImages && data.feedbackFormImages.length > 0) ||
+    (data.feedbackWordTexts && data.feedbackWordTexts.length > 0)
       ? ++sectionCounter
       : null;
   const additionalSecNum =
@@ -496,25 +499,40 @@ export const EventReportPdfDocument: React.FC<PdfDocumentProps> = ({
         )}
 
         {/* Section: Feedback Forms (If provided) */}
-        {feedbackSecNum && data.feedbackFormImages && (
+        {feedbackSecNum && (
           <PdfView style={styles.section}>
             <PdfText style={styles.sectionTitle}>
               {`${feedbackSecNum}. FEEDBACK FORMS`}
             </PdfText>
-            <PdfView style={styles.documentGrid}>
-              {data.feedbackFormImages.map((img, index) => (
-                <PdfView key={index} style={styles.documentCard} wrap={false}>
-                  <PdfImage style={styles.documentImg} src={img} />
-                  <PdfText style={styles.documentCaption}>
-                    {data.feedbackFormImages!.length > 1
-                      ? `Feedback Form Page ${index + 1}`
-                      : `Feedback Form — ${data.eventName}`}
-                  </PdfText>
-                </PdfView>
-              ))}
-            </PdfView>
+
+            {/* Feedback images */}
+            {data.feedbackFormImages && data.feedbackFormImages.length > 0 && (
+              <PdfView style={styles.documentGrid}>
+                {data.feedbackFormImages.map((img, index) => (
+                  <PdfView key={index} style={styles.documentCard} wrap={false}>
+                    <PdfImage style={styles.documentImg} src={img} />
+                    <PdfText style={styles.documentCaption}>
+                      {data.feedbackFormImages!.length > 1
+                        ? `Feedback Form Page ${index + 1}`
+                        : `Feedback Form — ${data.eventName}`}
+                    </PdfText>
+                  </PdfView>
+                ))}
+              </PdfView>
+            )}
+
+            {/* Word document text blocks */}
+            {data.feedbackWordTexts && data.feedbackWordTexts.map((doc, index) => (
+              <PdfView key={`word-${index}`} style={styles.documentCard} wrap={false}>
+                <PdfText style={styles.documentCaption}>
+                  {`Word Document: ${doc.filename}`}
+                </PdfText>
+                <PdfText style={styles.sectionBody}>{doc.text}</PdfText>
+              </PdfView>
+            ))}
           </PdfView>
         )}
+
 
         {/* Section: Additional Information (If provided) */}
         {additionalSecNum && data.additionalInfo && (
