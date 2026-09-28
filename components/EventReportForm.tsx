@@ -22,6 +22,7 @@ import {
   Eye,
   Sparkles,
   Info,
+  ClipboardList,
 } from "lucide-react";
 
 interface EventReportFormProps {
@@ -39,7 +40,7 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
   onSuccess,
 }) => {
   const [formData, setFormData] = useState<
-    Omit<EventReportData, "photographs" | "brochureImages" | "participantListImages">
+    Omit<EventReportData, "photographs" | "brochureImages" | "participantListImages" | "feedbackFormImages">
   >({
     eventName: "",
     eventDate: new Date().toISOString().split("T")[0],
@@ -56,6 +57,7 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
   const [photos, setPhotos] = useState<{ id: string; file: File; preview: string }[]>([]);
   const [brochures, setBrochures] = useState<{ id: string; file: File; preview: string }[]>([]);
   const [participantLists, setParticipantLists] = useState<{ id: string; file: File; preview: string }[]>([]);
+  const [feedbackForms, setFeedbackForms] = useState<{ id: string; file: File; preview: string }[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
@@ -212,6 +214,49 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
     });
   };
 
+  // Feedback Form Upload Handler
+  const handleFeedbackFormUpload = (files: FileList | null) => {
+    if (!files) return;
+
+    const newForms: { id: string; file: File; preview: string }[] = [];
+    const itemErrors: string[] = [];
+
+    Array.from(files).forEach((file) => {
+      if (!file.type.startsWith("image/")) {
+        itemErrors.push(`${file.name} is not a valid image file.`);
+        return;
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        itemErrors.push(`${file.name} exceeds 5MB size limit.`);
+        return;
+      }
+
+      const id = Math.random().toString(36).substring(2, 9);
+      const preview = URL.createObjectURL(file);
+      newForms.push({ id, file, preview });
+    });
+
+    if (itemErrors.length > 0) {
+      setErrors((prev) => ({ ...prev, feedbackFormImages: itemErrors.join(" ") }));
+    } else {
+      setErrors((prev) => {
+        const copy = { ...prev };
+        delete copy.feedbackFormImages;
+        return copy;
+      });
+    }
+
+    setFeedbackForms((prev) => [...prev, ...newForms]);
+  };
+
+  const removeFeedbackFormItem = (id: string) => {
+    setFeedbackForms((prev) => {
+      const target = prev.find((p) => p.id === id);
+      if (target) URL.revokeObjectURL(target.preview);
+      return prev.filter((p) => p.id !== id);
+    });
+  };
+
   // Client Validation
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {};
@@ -302,6 +347,11 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
       // Append participant list images
       participantLists.forEach((item) => {
         payload.append("participantListImages", item.file);
+      });
+
+      // Append feedback form images
+      feedbackForms.forEach((item) => {
+        payload.append("feedbackFormImages", item.file);
       });
 
       const res = await fetch("/api/generate-report", {
@@ -859,7 +909,78 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
               )}
             </div>
 
-            {/* 4. Additional Information */}
+            {/* 4. Feedback Forms */}
+            <div>
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5 flex items-center gap-1.5">
+                <ClipboardList className="w-4 h-4 text-blue-700" />
+                Feedback Forms <span className="text-slate-400 font-normal">(Optional)</span>
+              </label>
+
+              <div className="border-2 border-dashed border-slate-300 rounded-2xl p-5 text-center hover:border-blue-500 transition-colors bg-slate-50/50">
+                <input
+                  type="file"
+                  id="feedback-upload"
+                  multiple
+                  accept="image/png, image/jpeg, image/webp"
+                  onChange={(e) => handleFeedbackFormUpload(e.target.files)}
+                  className="hidden"
+                  disabled={isSubmitting}
+                />
+                <label
+                  htmlFor="feedback-upload"
+                  className="cursor-pointer flex flex-col items-center justify-center gap-2"
+                >
+                  <div className="w-11 h-11 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center">
+                    <PlusCircle className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-800">
+                      Click to upload feedback form(s)
+                    </p>
+                    <p className="text-xs text-slate-500 mt-0.5">
+                      Scanned feedback forms (PNG, JPG, or WebP up to 5MB)
+                    </p>
+                  </div>
+                </label>
+              </div>
+
+              {errors.feedbackFormImages && (
+                <p className="mt-1.5 text-xs text-red-600 font-medium flex items-center gap-1">
+                  <AlertCircle className="w-3.5 h-3.5" /> {errors.feedbackFormImages}
+                </p>
+              )}
+
+              {/* Feedback Form Previews */}
+              {feedbackForms.length > 0 && (
+                <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  {feedbackForms.map((item, index) => (
+                    <div
+                      key={item.id}
+                      className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-xs aspect-4/3 bg-slate-900"
+                    >
+                      <img
+                        src={item.preview}
+                        alt={`Feedback form preview ${index + 1}`}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeFeedbackFormItem(item.id)}
+                        className="absolute top-2 right-2 p-1.5 bg-red-600/90 text-white rounded-lg opacity-90 hover:opacity-100 hover:bg-red-700 transition-all shadow-md"
+                        title="Remove feedback form"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 text-[10px] text-white text-center">
+                        Feedback #{index + 1}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* 5. Additional Information */}
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
                 Additional Information <span className="text-slate-400 font-normal">(Optional)</span>

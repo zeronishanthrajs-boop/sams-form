@@ -26,6 +26,7 @@ export interface EventReportData {
   photographs?: string[]; // Base64 data URLs or http URLs
   brochureImages?: string[]; // Base64 data URLs or http URLs
   participantListImages?: string[]; // Base64 data URLs or http URLs
+  feedbackFormImages?: string[]; // Base64 data URLs or http URLs
 }
 
 const styles = StyleSheet.create({
@@ -341,6 +342,10 @@ export const EventReportPdfDocument: React.FC<PdfDocumentProps> = ({
     data.participantListImages && data.participantListImages.length > 0
       ? ++sectionCounter
       : null;
+  const feedbackSecNum =
+    data.feedbackFormImages && data.feedbackFormImages.length > 0
+      ? ++sectionCounter
+      : null;
   const additionalSecNum =
     data.additionalInfo && data.additionalInfo.trim().length > 0
       ? ++sectionCounter
@@ -483,6 +488,27 @@ export const EventReportPdfDocument: React.FC<PdfDocumentProps> = ({
                     {data.participantListImages!.length > 1
                       ? `Participant Attendance Sheet Page ${index + 1} (${data.numberOfParticipants} Participants)`
                       : `Participant Attendance Sheet - ${data.eventName} (${data.numberOfParticipants} Participants)`}
+                  </PdfText>
+                </PdfView>
+              ))}
+            </PdfView>
+          </PdfView>
+        )}
+
+        {/* Section: Feedback Forms (If provided) */}
+        {feedbackSecNum && data.feedbackFormImages && (
+          <PdfView style={styles.section}>
+            <PdfText style={styles.sectionTitle}>
+              {`${feedbackSecNum}. FEEDBACK FORMS`}
+            </PdfText>
+            <PdfView style={styles.documentGrid}>
+              {data.feedbackFormImages.map((img, index) => (
+                <PdfView key={index} style={styles.documentCard} wrap={false}>
+                  <PdfImage style={styles.documentImg} src={img} />
+                  <PdfText style={styles.documentCaption}>
+                    {data.feedbackFormImages!.length > 1
+                      ? `Feedback Form Page ${index + 1}`
+                      : `Feedback Form — ${data.eventName}`}
                   </PdfText>
                 </PdfView>
               ))}

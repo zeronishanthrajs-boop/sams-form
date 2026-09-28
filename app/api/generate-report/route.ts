@@ -82,6 +82,18 @@ export async function POST(req: NextRequest) {
         }
       }
 
+      // Handle feedback form images from multipart form data
+      const feedbackFiles = formData.getAll("feedbackFormImages") as File[];
+      const feedbackFormImages: string[] = [];
+
+      for (const file of feedbackFiles) {
+        if (file && typeof file === "object" && file.size > 0) {
+          const buffer = Buffer.from(await file.arrayBuffer());
+          const mimeType = file.type || "image/jpeg";
+          feedbackFormImages.push(`data:${mimeType};base64,${buffer.toString("base64")}`);
+        }
+      }
+
       eventData = {
         eventName,
         eventDate,
@@ -96,6 +108,7 @@ export async function POST(req: NextRequest) {
         photographs,
         brochureImages,
         participantListImages,
+        feedbackFormImages,
       };
     } else {
       const body = await req.json();
