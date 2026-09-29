@@ -331,88 +331,126 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
     setIsSubmitting(true);
 
     try {
-      // ── Step 1: Upload all files to Vercel Blob (browser → Blob directly) ──
-      // This bypasses Vercel's 4.5 MB serverless body limit entirely.
+      // ── Compress images client-side using Canvas API (no library needed) ────
+      // Keeps images under 700KB each so the multipart body stays < 4.5 MB on Vercel.
       setUploadProgress("uploading");
-      const { upload } = await import("@vercel/blob/client");
 
-      const uploadToBlob = async (file: File): Promise<string> => {
-        const blob = await upload(
-          `sams-form/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
-          file,
-          { access: "public", handleUploadUrl: "/api/blob-upload" }
-        );
-        return blob.url;
-      };
+      const compressImage = (file: File, maxBytes = 700 * 1024): Promise<File> =>
+        new Promise((resolve) => {
+          if (!file.type.startsWith("image/") || file.size <= maxBytes) {
+            resolve(file);
+            return;
+          }
+          const img = new Image();
+          const url = URL.createObjectURL(file);
+          img.onload = () => {
+            URL.revokeObjectURL(url);
+            const canvas = document.createElement("canvas");
+            let { naturalWidth: w, naturalHeight: h } = img;
+            const MAX_DIM = 1600;
+            if (w > MAX_DIM || h > MAX_DIM) {
+              const r = Math.min(MAX_DIM / w, MAX_DIM / h);
+              w = Math.round(w * r);
+              h = Math.round(h * r);
+            }
+            canvas.width = w;
+            canvas.height = h;
+            canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
+            const tryQ = (q: number) => {
+              canvas.toBlob((blob) => {
+                if (!blob || q <= 0.3) { resolve(file); return; }
+                if (blob.size <= maxBytes) {
+                  resolve(new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" }));
+                } else {
+                  tryQ(q - 0.1);
+                }
+              }, "image/jpeg", q);
+            };
+            tryQ(0.85);
+          };
+          img.onerror = () => resolve(file);
+          img.src = url;
+        });
 
-      const photoUrls = await Promise.all(photos.map((p) => uploadToBlob(p.file)));
-      const brochureUrls = await Promise.all(brochures.map((b) => uploadToBlob(b.file)));
-      const participantUrls = await Promise.all(participantLists.map((p) => uploadToBlob(p.file)));
+      // ── Build multipart FormData (no Vercel Blob needed for images) ──────────
+      const payload = new FormData();
+      payload.append("eventName",            formData.eventName.trim());
+      payload.append("eventDate",            formData.eventDate.trim());
+      payload.append("eventVenue",           formData.eventVenue.trim());
+      payload.append("eventCoordinator",     formData.eventCoordinator.trim());
+      payload.append("facultyEmail",         formData.facultyEmail.trim());
+      payload.append("numberOfParticipants", String(formData.numberOfParticipants));
+      payload.append("objectives",           formData.objectives.trim());
+      payload.append("detailedReport",       formData.detailedReport.trim());
+      payload.append("programOutcomes",      formData.programOutcomes.trim());
+      payload.append("additionalInfo",       formData.additionalInfo?.trim() || "");
+      payload.append("customConfig",         JSON.stringify(config));
 
-      const feedbackImageUrls: string[] = [];
-      const feedbackPdfUrls: string[] = [];
-      const feedbackDocxEntries: Array<{ url: string; filename: string }> = [];
+      // Compress and append event photos
+      for (const p of photos) {
+        payload.append("photographs", await compressImage(p.file));
+      }
+      // Compress and append brochure images
+      for (const b of brochures) {
+        payload.append("brochureImages", await compressImage(b.file));
+      }
+      // Compress and append participant list images
+      for (const p of participantLists) {
+        payload.append("participantListImages", await compressImage(p.file));
+      }
 
-      for (const item of feedbackForms) {
-        const url = await uploadToBlob(item.file);
-        if (item.file.type.startsWith("image/")) {
-          feedbackImageUrls.push(url);
-        } else if (item.file.type === "application/pdf") {
-          feedbackPdfUrls.push(url);
-        } else {
-          feedbackDocxEntries.push({ url, filename: item.file.name });
+      // Feedback: split into images (compressed) vs PDF/Word (needs Blob)
+      const feedbackPdfOrDocx = feedbackForms.filter(
+        (f) => !f.file.type.startsWith("image/")
+      );
+      for (const f of feedbackForms.filter((f) => f.file.type.startsWith("image/"))) {
+        payload.append("feedbackFormImages", await compressImage(f.file));
+      }
+
+      // ── Optionally upload PDF/Word feedback via Vercel Blob (if configured) ─
+      if (feedbackPdfOrDocx.length > 0) {
+        try {
+          const { upload } = await import("@vercel/blob/client");
+          for (const item of feedbackPdfOrDocx) {
+            const blob = await upload(
+              `sams-form/${Date.now()}-${item.file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
+              item.file,
+              { access: "public", handleUploadUrl: "/api/blob-upload" }
+            );
+            if (item.file.type === "application/pdf") {
+              payload.append("feedbackPdfUrls", blob.url);
+            } else {
+              payload.append("feedbackDocxUrls",  blob.url);
+              payload.append("feedbackDocxNames", item.file.name);
+            }
+          }
+        } catch {
+          // Vercel Blob not configured — skip PDFs/Word with a soft warning
+          setServerError(
+            "Note: PDF and Word document feedback files were skipped because Vercel Blob Storage " +
+            "is not yet configured. Image feedback forms were included. Contact admin to enable PDF/Word uploads."
+          );
         }
       }
 
-      const blobUrlsToClean = [
-        ...photoUrls,
-        ...brochureUrls,
-        ...participantUrls,
-        ...feedbackImageUrls,
-        ...feedbackPdfUrls,
-        ...feedbackDocxEntries.map((e) => e.url),
-      ];
-
-      // ── Step 2: Submit JSON with blob URLs (tiny payload, no binary) ───────
+      // ── Submit to API ────────────────────────────────────────────────────────
       setUploadProgress("generating");
       const res = await fetch("/api/generate-report", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          eventName: formData.eventName.trim(),
-          eventDate: formData.eventDate.trim(),
-          eventVenue: formData.eventVenue.trim(),
-          eventCoordinator: formData.eventCoordinator.trim(),
-          facultyEmail: formData.facultyEmail.trim(),
-          numberOfParticipants: formData.numberOfParticipants,
-          objectives: formData.objectives.trim(),
-          detailedReport: formData.detailedReport.trim(),
-          programOutcomes: formData.programOutcomes.trim(),
-          additionalInfo: formData.additionalInfo?.trim() || "",
-          photographs: photoUrls,
-          brochureImages: brochureUrls,
-          participantListImages: participantUrls,
-          feedbackImageUrls,
-          feedbackPdfUrls,
-          feedbackDocxEntries,
-          blobUrlsToClean,
-          customConfig: config,
-        }),
+        body: payload, // multipart — no JSON body
       });
 
       const data = await res.json();
 
       if (!res.ok || !data.success) {
-        if (data.errors) {
-          setErrors(data.errors);
-        }
+        if (data.errors) setErrors(data.errors);
         throw new Error(data.message || "Failed to generate event report.");
       }
 
       onSuccess({
         pdfBase64: data.pdfBase64,
-        filename: data.filename,
-        message: data.message,
+        filename:  data.filename,
+        message:   data.message,
         simulated: data.emailResult?.simulated ?? true,
       });
     } catch (err: any) {
