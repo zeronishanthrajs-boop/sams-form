@@ -266,16 +266,25 @@ const styles = StyleSheet.create({
 });
 
 function getResolvedLogoUrl(logoUrl?: string): string | undefined {
-  // Explicit target logo path as specified
-  const explicitImagePath = "C:\\Users\\sakth\\OneDrive\\Pictures\\sams form\\images.jpg";
+  // On Vercel (or any deployed environment), use a public HTTPS URL for the logo
+  // so @react-pdf/renderer can fetch it server-side.
+  const vercelUrl = process.env.VERCEL_URL; // e.g. "sams-form.vercel.app"
+  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL; // custom override
 
+  if (vercelUrl || baseUrl) {
+    const origin = baseUrl || `https://${vercelUrl}`;
+    return `${origin}/images.jpg`;
+  }
+
+  // Local development: try to read from filesystem and return as base64 data URL
   const candidatePaths = [
-    explicitImagePath,
+    "C:\\Users\\sakth\\OneDrive\\Pictures\\sams form\\images.jpg",
     path.join(process.cwd(), "images.jpg"),
     path.join(process.cwd(), "public", "images.jpg"),
     logoUrl && path.isAbsolute(logoUrl) ? logoUrl : null,
-    logoUrl ? path.join(process.cwd(), logoUrl.startsWith("/") ? logoUrl.slice(1) : logoUrl) : null,
-    logoUrl ? path.join(process.cwd(), "public", logoUrl.startsWith("/") ? logoUrl.slice(1) : logoUrl) : null,
+    logoUrl
+      ? path.join(process.cwd(), logoUrl.startsWith("/") ? logoUrl.slice(1) : logoUrl)
+      : null,
     path.join(process.cwd(), "public", "logo.jpg"),
     path.join(process.cwd(), "logo.jpg"),
   ].filter(Boolean) as string[];
@@ -297,24 +306,8 @@ function getResolvedLogoUrl(logoUrl?: string): string | undefined {
     console.error("Error resolving logo image for PDF:", e);
   }
 
-  const url = logoUrl || "/images.jpg";
-
-  if (url.startsWith("data:")) {
-    return url;
-  }
-
-  if (url.startsWith("http://") || url.startsWith("https://")) {
-    return url;
-  }
-
-  if (typeof window !== "undefined") {
-    if (url.startsWith("/")) {
-      return window.location.origin + url;
-    }
-    return url;
-  }
-
-  return url;
+  // Final fallback: return as-is (may work if it's already a URL)
+  return logoUrl || undefined;
 }
 
 export interface PdfDocumentProps {

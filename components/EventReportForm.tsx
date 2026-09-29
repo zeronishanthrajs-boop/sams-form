@@ -60,6 +60,7 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
   const [feedbackForms, setFeedbackForms] = useState<{ id: string; file: File; preview: string }[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<"idle" | "uploading" | "generating">("idle");
   const [serverError, setServerError] = useState<string | null>(null);
 
   // Field change handler
@@ -330,47 +331,73 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
     setIsSubmitting(true);
 
     try {
-      const payload = new FormData();
-      payload.append("eventName", formData.eventName.trim());
-      payload.append("eventDate", formData.eventDate.trim());
-      payload.append("eventVenue", formData.eventVenue.trim());
-      payload.append("eventCoordinator", formData.eventCoordinator.trim());
-      payload.append("facultyEmail", formData.facultyEmail.trim());
-      payload.append(
-        "numberOfParticipants",
-        String(formData.numberOfParticipants)
-      );
-      payload.append("objectives", formData.objectives.trim());
-      payload.append("detailedReport", formData.detailedReport.trim());
-      payload.append("programOutcomes", formData.programOutcomes.trim());
-      payload.append("additionalInfo", formData.additionalInfo?.trim() || "");
+      // ── Step 1: Upload all files to Vercel Blob (browser → Blob directly) ──
+      // This bypasses Vercel's 4.5 MB serverless body limit entirely.
+      setUploadProgress("uploading");
+      const { upload } = await import("@vercel/blob/client");
 
-      // Send current custom config
-      payload.append("customConfig", JSON.stringify(config));
+      const uploadToBlob = async (file: File): Promise<string> => {
+        const blob = await upload(
+          `sams-form/${Date.now()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
+          file,
+          { access: "public", handleUploadUrl: "/api/blob-upload" }
+        );
+        return blob.url;
+      };
 
-      // Append photographs
-      photos.forEach((photoObj) => {
-        payload.append("photographs", photoObj.file);
-      });
+      const photoUrls = await Promise.all(photos.map((p) => uploadToBlob(p.file)));
+      const brochureUrls = await Promise.all(brochures.map((b) => uploadToBlob(b.file)));
+      const participantUrls = await Promise.all(participantLists.map((p) => uploadToBlob(p.file)));
 
-      // Append brochure images
-      brochures.forEach((item) => {
-        payload.append("brochureImages", item.file);
-      });
+      const feedbackImageUrls: string[] = [];
+      const feedbackPdfUrls: string[] = [];
+      const feedbackDocxEntries: Array<{ url: string; filename: string }> = [];
 
-      // Append participant list images
-      participantLists.forEach((item) => {
-        payload.append("participantListImages", item.file);
-      });
+      for (const item of feedbackForms) {
+        const url = await uploadToBlob(item.file);
+        if (item.file.type.startsWith("image/")) {
+          feedbackImageUrls.push(url);
+        } else if (item.file.type === "application/pdf") {
+          feedbackPdfUrls.push(url);
+        } else {
+          feedbackDocxEntries.push({ url, filename: item.file.name });
+        }
+      }
 
-      // Append feedback form images
-      feedbackForms.forEach((item) => {
-        payload.append("feedbackFormImages", item.file);
-      });
+      const blobUrlsToClean = [
+        ...photoUrls,
+        ...brochureUrls,
+        ...participantUrls,
+        ...feedbackImageUrls,
+        ...feedbackPdfUrls,
+        ...feedbackDocxEntries.map((e) => e.url),
+      ];
 
+      // ── Step 2: Submit JSON with blob URLs (tiny payload, no binary) ───────
+      setUploadProgress("generating");
       const res = await fetch("/api/generate-report", {
         method: "POST",
-        body: payload,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          eventName: formData.eventName.trim(),
+          eventDate: formData.eventDate.trim(),
+          eventVenue: formData.eventVenue.trim(),
+          eventCoordinator: formData.eventCoordinator.trim(),
+          facultyEmail: formData.facultyEmail.trim(),
+          numberOfParticipants: formData.numberOfParticipants,
+          objectives: formData.objectives.trim(),
+          detailedReport: formData.detailedReport.trim(),
+          programOutcomes: formData.programOutcomes.trim(),
+          additionalInfo: formData.additionalInfo?.trim() || "",
+          photographs: photoUrls,
+          brochureImages: brochureUrls,
+          participantListImages: participantUrls,
+          feedbackImageUrls,
+          feedbackPdfUrls,
+          feedbackDocxEntries,
+          blobUrlsToClean,
+          customConfig: config,
+        }),
       });
 
       const data = await res.json();
@@ -394,6 +421,7 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
       );
     } finally {
       setIsSubmitting(false);
+      setUploadProgress("idle");
     }
   };
 
@@ -1050,7 +1078,11 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
               {isSubmitting ? (
                 <>
                   <Loader2 className="w-5 h-5 animate-spin text-amber-400" />
-                  <span>Generating your event report. Please wait...</span>
+                  <span>
+                    {uploadProgress === "uploading"
+                      ? "Uploading files... Please wait..."
+                      : "Generating your event report. Please wait..."}
+                  </span>
                 </>
               ) : (
                 <>
