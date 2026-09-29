@@ -172,25 +172,34 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
     });
   };
 
-  // Participant List Upload Handler
+  // Participant List Upload Handler — accepts images and PDFs
   const handleParticipantListUpload = (files: FileList | null) => {
     if (!files) return;
+
+    const SUPPORTED_TYPES = [
+      "image/png",
+      "image/jpeg",
+      "image/webp",
+      "application/pdf",
+    ];
 
     const newLists: { id: string; file: File; preview: string }[] = [];
     const itemErrors: string[] = [];
 
     Array.from(files).forEach((file) => {
-      if (!file.type.startsWith("image/")) {
-        itemErrors.push(`${file.name} is not a valid image file.`);
+      const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
+      const isImg = file.type.startsWith("image/");
+      if (!isImg && !isPdf) {
+        itemErrors.push(`${file.name}: unsupported type. Use PNG, JPG, WebP, or PDF`);
         return;
       }
-      if (file.size > 5 * 1024 * 1024) {
-        itemErrors.push(`${file.name} exceeds 5MB size limit.`);
+      if (file.size > 20 * 1024 * 1024) {
+        itemErrors.push(`${file.name} exceeds 20MB size limit.`);
         return;
       }
 
       const id = Math.random().toString(36).substring(2, 9);
-      const preview = URL.createObjectURL(file);
+      const preview = isImg ? URL.createObjectURL(file) : "";
       newLists.push({ id, file, preview });
     });
 
@@ -210,7 +219,7 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
   const removeParticipantList = (id: string) => {
     setParticipantLists((prev) => {
       const target = prev.find((p) => p.id === id);
-      if (target) URL.revokeObjectURL(target.preview);
+      if (target && target.preview) URL.revokeObjectURL(target.preview);
       return prev.filter((p) => p.id !== id);
     });
   };
@@ -404,9 +413,16 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
       for (const b of brochures) {
         payload.append("brochureImages", await compressImage(b.file));
       }
-      // Compress and append participant list images
+      // Compress and append participant list images or PDFs
       for (const p of participantLists) {
-        payload.append("participantListImages", await compressImage(p.file));
+        if (p.file.type.startsWith("image/")) {
+          payload.append("participantListImages", await compressImage(p.file));
+        } else if (
+          p.file.type === "application/pdf" ||
+          p.file.name.toLowerCase().endsWith(".pdf")
+        ) {
+          payload.append("participantListPdfFiles", p.file);
+        }
       }
 
       // Feedback files: route by type directly to FormData
@@ -923,7 +939,7 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
                   type="file"
                   id="participant-upload"
                   multiple
-                  accept="image/png, image/jpeg, image/webp"
+                  accept="image/png,image/jpeg,image/webp,application/pdf,.pdf"
                   onChange={(e) => handleParticipantListUpload(e.target.files)}
                   className="hidden"
                   disabled={isSubmitting}
@@ -940,7 +956,7 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
                       Click to upload participant list / attendance sheet
                     </p>
                     <p className="text-xs text-slate-500 mt-0.5">
-                      Scanned attendance sheet or attendee roster (PNG, JPG, or WebP up to 5MB)
+                      Scanned attendance sheet or attendee roster (PNG, JPG, WebP, or PDF up to 20MB each)
                     </p>
                   </div>
                 </label>
@@ -955,29 +971,44 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
               {/* Participant List Previews */}
               {participantLists.length > 0 && (
                 <div className="mt-4 grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  {participantLists.map((item, index) => (
-                    <div
-                      key={item.id}
-                      className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-xs aspect-4/3 bg-slate-900"
-                    >
-                      <img
-                        src={item.preview}
-                        alt={`Participant list preview ${index + 1}`}
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeParticipantList(item.id)}
-                        className="absolute top-2 right-2 p-1.5 bg-red-600/90 text-white rounded-lg opacity-90 hover:opacity-100 hover:bg-red-700 transition-all shadow-md"
-                        title="Remove participant list"
+                  {participantLists.map((item, index) => {
+                    const isImage = item.file.type.startsWith("image/");
+                    return (
+                      <div
+                        key={item.id}
+                        className="relative group rounded-xl overflow-hidden border border-slate-200 shadow-xs aspect-4/3 bg-slate-900"
                       >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                      <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 text-[10px] text-white text-center">
-                        Attendance Page #{index + 1}
+                        {isImage ? (
+                          <img
+                            src={item.preview}
+                            alt={`Participant list preview ${index + 1}`}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                          />
+                        ) : (
+                          <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 p-2">
+                            <FileText className="w-8 h-8 text-red-400" />
+                            <span className="text-[9px] text-slate-300 text-center break-all leading-tight px-1">
+                              {item.file.name}
+                            </span>
+                            <span className="text-[8px] text-slate-500 uppercase tracking-wide">
+                              PDF
+                            </span>
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => removeParticipantList(item.id)}
+                          className="absolute top-2 right-2 p-1.5 bg-red-600/90 text-white rounded-lg opacity-90 hover:opacity-100 hover:bg-red-700 transition-all shadow-md"
+                          title="Remove participant list"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                        <div className="absolute bottom-0 inset-x-0 bg-gradient-to-t from-black/70 to-transparent p-1.5 text-[10px] text-white text-center">
+                          Attendance #{index + 1}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

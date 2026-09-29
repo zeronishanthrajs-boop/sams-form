@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
 
     let eventData: EventReportData;
     let customConfig: Partial<InstitutionConfig> = {};
+    const participantListPdfBuffers: Buffer[] = [];
     const feedbackPdfBuffers: Buffer[] = [];
     const feedbackWordTexts: Array<{ filename: string; text: string }> = [];
 
@@ -81,6 +82,22 @@ export async function POST(req: NextRequest) {
       for (const file of participantFiles) {
         if (file && typeof file === "object" && file.size > 0) {
           participantListImages.push(await fileToDataUrl(file));
+        }
+      }
+
+      // Participant list PDF files (direct multipart upload)
+      const participantPdfFiles = formData.getAll(
+        "participantListPdfFiles"
+      ) as File[];
+      for (const file of participantPdfFiles) {
+        if (file && typeof file === "object" && file.size > 0) {
+          try {
+            participantListPdfBuffers.push(
+              Buffer.from(await file.arrayBuffer())
+            );
+          } catch (e) {
+            console.warn("Could not read participant list PDF buffer:", e);
+          }
         }
       }
 
@@ -195,57 +212,97 @@ export async function POST(req: NextRequest) {
     // Generate main PDF Buffer
     let pdfBuffer = await generateEventReportPdfBuffer(eventData, config);
 
-    // Merge any uploaded feedback PDFs using pdf-lib
-    if (feedbackPdfBuffers.length > 0) {
+    // Merge any uploaded Participant List PDFs or Feedback PDFs using pdf-lib
+    if (participantListPdfBuffers.length > 0 || feedbackPdfBuffers.length > 0) {
       const { PDFDocument, StandardFonts, rgb } = await import("pdf-lib");
       const mainDoc = await PDFDocument.load(pdfBuffer);
-
-      // Insert a clearly labeled separator page before the appended PDF pages
-      const separatorPage = mainDoc.addPage([595.28, 841.89]); // A4 size
       const boldFont = await mainDoc.embedFont(StandardFonts.HelveticaBold);
       const regularFont = await mainDoc.embedFont(StandardFonts.Helvetica);
       const darkBlue = rgb(0.059, 0.173, 0.349);
       const grey = rgb(0.4, 0.4, 0.4);
 
-      separatorPage.drawText("FEEDBACK FORMS", {
-        x: 50,
-        y: 780,
-        size: 20,
-        font: boldFont,
-        color: darkBlue,
-      });
-      separatorPage.drawLine({
-        start: { x: 50, y: 770 },
-        end: { x: 545, y: 770 },
-        thickness: 1,
-        color: darkBlue,
-      });
-      separatorPage.drawText(
-        `Feedback document(s) submitted for: ${eventData.eventName}`,
-        { x: 50, y: 748, size: 11, font: regularFont, color: grey }
-      );
-      separatorPage.drawText(
-        `Total feedback files attached: ${feedbackPdfBuffers.length}`,
-        { x: 50, y: 728, size: 11, font: regularFont, color: grey }
-      );
+      // 1. Participant List PDFs
+      if (participantListPdfBuffers.length > 0) {
+        const partSeparatorPage = mainDoc.addPage([595.28, 841.89]);
+        partSeparatorPage.drawText("PARTICIPANT LIST / ATTENDANCE SHEET", {
+          x: 50,
+          y: 780,
+          size: 18,
+          font: boldFont,
+          color: darkBlue,
+        });
+        partSeparatorPage.drawLine({
+          start: { x: 50, y: 770 },
+          end: { x: 545, y: 770 },
+          thickness: 1,
+          color: darkBlue,
+        });
+        partSeparatorPage.drawText(
+          `Participant attendance document(s) submitted for: ${eventData.eventName}`,
+          { x: 50, y: 748, size: 11, font: regularFont, color: grey }
+        );
+        partSeparatorPage.drawText(
+          `Total participant list document(s) attached: ${participantListPdfBuffers.length} (${eventData.numberOfParticipants} Participants)`,
+          { x: 50, y: 728, size: 11, font: regularFont, color: grey }
+        );
 
-      // Append each feedback PDF's pages after the separator
-      for (const pdfBuf of feedbackPdfBuffers) {
-        try {
-          const feedbackDoc = await PDFDocument.load(pdfBuf);
-          const copiedPages = await mainDoc.copyPages(
-            feedbackDoc,
-            feedbackDoc.getPageIndices()
-          );
-          copiedPages.forEach((page) => mainDoc.addPage(page));
-        } catch (e) {
-          console.warn("Could not merge a feedback PDF page:", e);
+        for (const pdfBuf of participantListPdfBuffers) {
+          try {
+            const partDoc = await PDFDocument.load(pdfBuf);
+            const copiedPages = await mainDoc.copyPages(
+              partDoc,
+              partDoc.getPageIndices()
+            );
+            copiedPages.forEach((page) => mainDoc.addPage(page));
+          } catch (e) {
+            console.warn("Could not merge a participant list PDF page:", e);
+          }
+        }
+      }
+
+      // 2. Feedback Form PDFs
+      if (feedbackPdfBuffers.length > 0) {
+        const separatorPage = mainDoc.addPage([595.28, 841.89]);
+        separatorPage.drawText("FEEDBACK FORMS", {
+          x: 50,
+          y: 780,
+          size: 20,
+          font: boldFont,
+          color: darkBlue,
+        });
+        separatorPage.drawLine({
+          start: { x: 50, y: 770 },
+          end: { x: 545, y: 770 },
+          thickness: 1,
+          color: darkBlue,
+        });
+        separatorPage.drawText(
+          `Feedback document(s) submitted for: ${eventData.eventName}`,
+          { x: 50, y: 748, size: 11, font: regularFont, color: grey }
+        );
+        separatorPage.drawText(
+          `Total feedback files attached: ${feedbackPdfBuffers.length}`,
+          { x: 50, y: 728, size: 11, font: regularFont, color: grey }
+        );
+
+        for (const pdfBuf of feedbackPdfBuffers) {
+          try {
+            const feedbackDoc = await PDFDocument.load(pdfBuf);
+            const copiedPages = await mainDoc.copyPages(
+              feedbackDoc,
+              feedbackDoc.getPageIndices()
+            );
+            copiedPages.forEach((page) => mainDoc.addPage(page));
+          } catch (e) {
+            console.warn("Could not merge a feedback PDF page:", e);
+          }
         }
       }
 
       const mergedBytes = await mainDoc.save();
       pdfBuffer = Buffer.from(mergedBytes);
     }
+
 
     // Generate filename
     const filename = formatFilename(

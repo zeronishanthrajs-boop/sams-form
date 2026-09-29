@@ -11,6 +11,7 @@ import {
   pdf,
 } from "@react-pdf/renderer";
 import { InstitutionConfig } from "@/config/institutionConfig";
+import { DEFAULT_LOGO_BASE64 } from "@/config/defaultLogoBase64";
 
 export interface EventReportData {
   eventName: string;
@@ -265,25 +266,24 @@ const styles = StyleSheet.create({
   },
 });
 
-function getResolvedLogoUrl(logoUrl?: string): string | undefined {
-  // On Vercel (or any deployed environment), use a public HTTPS URL for the logo
-  // so @react-pdf/renderer can fetch it server-side.
-  const vercelUrl = process.env.VERCEL_URL; // e.g. "sams-form.vercel.app"
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL; // custom override
-
-  if (vercelUrl || baseUrl) {
-    const origin = baseUrl || `https://${vercelUrl}`;
-    return `${origin}/images.jpg`;
+function getResolvedLogoUrl(logoUrl?: string): string {
+  // If logoUrl is already a base64 data URL, use it directly
+  if (logoUrl && logoUrl.startsWith("data:")) {
+    return logoUrl;
   }
 
   // Local development: try to read from filesystem and return as base64 data URL
   const candidatePaths = [
-    "C:\\Users\\sakth\\OneDrive\\Pictures\\sams form\\images.jpg",
-    path.join(process.cwd(), "images.jpg"),
     path.join(process.cwd(), "public", "images.jpg"),
+    path.join(process.cwd(), "images.jpg"),
+    "C:\\Users\\sakth\\OneDrive\\Pictures\\sams form\\public\\images.jpg",
+    "C:\\Users\\sakth\\OneDrive\\Pictures\\sams form\\images.jpg",
     logoUrl && path.isAbsolute(logoUrl) ? logoUrl : null,
     logoUrl
       ? path.join(process.cwd(), logoUrl.startsWith("/") ? logoUrl.slice(1) : logoUrl)
+      : null,
+    logoUrl
+      ? path.join(process.cwd(), "public", logoUrl.startsWith("/") ? logoUrl.slice(1) : logoUrl)
       : null,
     path.join(process.cwd(), "public", "logo.jpg"),
     path.join(process.cwd(), "logo.jpg"),
@@ -293,21 +293,23 @@ function getResolvedLogoUrl(logoUrl?: string): string | undefined {
     for (const p of candidatePaths) {
       if (fs.existsSync(p)) {
         const buffer = fs.readFileSync(p);
-        const isPng =
-          buffer[0] === 0x89 &&
-          buffer[1] === 0x50 &&
-          buffer[2] === 0x4e &&
-          buffer[3] === 0x47;
-        const mime = isPng ? "image/png" : "image/jpeg";
-        return `data:${mime};base64,${buffer.toString("base64")}`;
+        if (buffer && buffer.length > 0) {
+          const isPng =
+            buffer[0] === 0x89 &&
+            buffer[1] === 0x50 &&
+            buffer[2] === 0x4e &&
+            buffer[3] === 0x47;
+          const mime = isPng ? "image/png" : "image/jpeg";
+          return `data:${mime};base64,${buffer.toString("base64")}`;
+        }
       }
     }
   } catch (e) {
     console.error("Error resolving logo image for PDF:", e);
   }
 
-  // Final fallback: return as-is (may work if it's already a URL)
-  return logoUrl || undefined;
+  // Guaranteed fallback: use embedded base64 logo so it NEVER fails in any environment
+  return DEFAULT_LOGO_BASE64;
 }
 
 export interface PdfDocumentProps {

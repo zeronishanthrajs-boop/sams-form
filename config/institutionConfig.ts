@@ -24,7 +24,7 @@ export interface InstitutionConfig {
 
 export const defaultInstitutionConfig: InstitutionConfig = {
   collegeName: process.env.NEXT_PUBLIC_COLLEGE_NAME || "Sambhram Academy of Management Studies",
-  collegeAddress: process.env.NEXT_PUBLIC_COLLEGE_ADDRESS || "M.S. Palya, Jalahalli East, Bangalore – 560097, Karnataka, India",
+  collegeAddress: process.env.NEXT_PUBLIC_COLLEGE_ADDRESS || "M.S. Palya, Jalahalli East, Bengaluru – 560097, Karnataka, India",
   collegeAffiliation: process.env.NEXT_PUBLIC_COLLEGE_AFFILIATION || "Affiliated to Dr. Manmohan Singh Bengaluru City University | Recognized by Govt. of Karnataka",
   naacAccreditation: process.env.NEXT_PUBLIC_NAAC_ACCREDITATION || "Accredited by NAAC | Affiliated to Dr. Manmohan Singh Bengaluru City University | Recognized by Govt. of Karnataka",
   departmentName: process.env.NEXT_PUBLIC_DEPARTMENT_NAME || "Department of Computer Applications (BCA)",
