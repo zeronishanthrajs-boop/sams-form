@@ -331,11 +331,11 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
     setIsSubmitting(true);
 
     try {
-      // ── Compress images client-side using Canvas API (no library needed) ────
-      // Keeps images under 700KB each so the multipart body stays < 4.5 MB on Vercel.
+      // ── Compress images client-side using Canvas API ────
+      // Keeps each image around 200-350KB so the whole form stays well under 4.5 MB on Vercel.
       setUploadProgress("uploading");
 
-      const compressImage = (file: File, maxBytes = 700 * 1024): Promise<File> =>
+      const compressImage = (file: File, maxBytes = 350 * 1024): Promise<File> =>
         new Promise((resolve) => {
           if (!file.type.startsWith("image/") || file.size <= maxBytes) {
             resolve(file);
@@ -347,7 +347,7 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
             URL.revokeObjectURL(url);
             const canvas = document.createElement("canvas");
             let { naturalWidth: w, naturalHeight: h } = img;
-            const MAX_DIM = 1600;
+            const MAX_DIM = 1400;
             if (w > MAX_DIM || h > MAX_DIM) {
               const r = Math.min(MAX_DIM / w, MAX_DIM / h);
               w = Math.round(w * r);
@@ -358,33 +358,43 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
             canvas.getContext("2d")!.drawImage(img, 0, 0, w, h);
             const tryQ = (q: number) => {
               canvas.toBlob((blob) => {
-                if (!blob || q <= 0.3) { resolve(file); return; }
+                if (!blob || q <= 0.3) {
+                  resolve(file);
+                  return;
+                }
                 if (blob.size <= maxBytes) {
-                  resolve(new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" }));
+                  resolve(
+                    new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), {
+                      type: "image/jpeg",
+                    })
+                  );
                 } else {
                   tryQ(q - 0.1);
                 }
               }, "image/jpeg", q);
             };
-            tryQ(0.85);
+            tryQ(0.8);
           };
           img.onerror = () => resolve(file);
           img.src = url;
         });
 
-      // ── Build multipart FormData (no Vercel Blob needed for images) ──────────
+      // ── Build multipart FormData (no Vercel Blob needed) ──────────
       const payload = new FormData();
-      payload.append("eventName",            formData.eventName.trim());
-      payload.append("eventDate",            formData.eventDate.trim());
-      payload.append("eventVenue",           formData.eventVenue.trim());
-      payload.append("eventCoordinator",     formData.eventCoordinator.trim());
-      payload.append("facultyEmail",         formData.facultyEmail.trim());
-      payload.append("numberOfParticipants", String(formData.numberOfParticipants));
-      payload.append("objectives",           formData.objectives.trim());
-      payload.append("detailedReport",       formData.detailedReport.trim());
-      payload.append("programOutcomes",      formData.programOutcomes.trim());
-      payload.append("additionalInfo",       formData.additionalInfo?.trim() || "");
-      payload.append("customConfig",         JSON.stringify(config));
+      payload.append("eventName", formData.eventName.trim());
+      payload.append("eventDate", formData.eventDate.trim());
+      payload.append("eventVenue", formData.eventVenue.trim());
+      payload.append("eventCoordinator", formData.eventCoordinator.trim());
+      payload.append("facultyEmail", formData.facultyEmail.trim());
+      payload.append(
+        "numberOfParticipants",
+        String(formData.numberOfParticipants)
+      );
+      payload.append("objectives", formData.objectives.trim());
+      payload.append("detailedReport", formData.detailedReport.trim());
+      payload.append("programOutcomes", formData.programOutcomes.trim());
+      payload.append("additionalInfo", formData.additionalInfo?.trim() || "");
+      payload.append("customConfig", JSON.stringify(config));
 
       // Compress and append event photos
       for (const p of photos) {
@@ -399,37 +409,20 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
         payload.append("participantListImages", await compressImage(p.file));
       }
 
-      // Feedback: split into images (compressed) vs PDF/Word (needs Blob)
-      const feedbackPdfOrDocx = feedbackForms.filter(
-        (f) => !f.file.type.startsWith("image/")
-      );
-      for (const f of feedbackForms.filter((f) => f.file.type.startsWith("image/"))) {
-        payload.append("feedbackFormImages", await compressImage(f.file));
-      }
-
-      // ── Optionally upload PDF/Word feedback via Vercel Blob (if configured) ─
-      if (feedbackPdfOrDocx.length > 0) {
-        try {
-          const { upload } = await import("@vercel/blob/client");
-          for (const item of feedbackPdfOrDocx) {
-            const blob = await upload(
-              `sams-form/${Date.now()}-${item.file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`,
-              item.file,
-              { access: "public", handleUploadUrl: "/api/blob-upload" }
-            );
-            if (item.file.type === "application/pdf") {
-              payload.append("feedbackPdfUrls", blob.url);
-            } else {
-              payload.append("feedbackDocxUrls",  blob.url);
-              payload.append("feedbackDocxNames", item.file.name);
-            }
-          }
-        } catch {
-          // Vercel Blob not configured — skip PDFs/Word with a soft warning
-          setServerError(
-            "Note: PDF and Word document feedback files were skipped because Vercel Blob Storage " +
-            "is not yet configured. Image feedback forms were included. Contact admin to enable PDF/Word uploads."
-          );
+      // Feedback files: route by type directly to FormData
+      for (const item of feedbackForms) {
+        if (item.file.type.startsWith("image/")) {
+          payload.append("feedbackFormImages", await compressImage(item.file));
+        } else if (
+          item.file.type === "application/pdf" ||
+          item.file.name.toLowerCase().endsWith(".pdf")
+        ) {
+          payload.append("feedbackPdfFiles", item.file);
+        } else if (
+          item.file.name.toLowerCase().endsWith(".docx") ||
+          item.file.type.includes("wordprocessingml")
+        ) {
+          payload.append("feedbackDocxFiles", item.file);
         }
       }
 
@@ -437,7 +430,7 @@ export const EventReportForm: React.FC<EventReportFormProps> = ({
       setUploadProgress("generating");
       const res = await fetch("/api/generate-report", {
         method: "POST",
-        body: payload, // multipart — no JSON body
+        body: payload,
       });
 
       const data = await res.json();
