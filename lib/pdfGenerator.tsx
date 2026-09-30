@@ -369,7 +369,6 @@ export const EventReportPdfDocument: React.FC<PdfDocumentProps> = ({
           )}
 
           <PdfView style={styles.headerTextContainer}>
-            <PdfText style={styles.collegeTitle}>{cleanCollegeName}</PdfText>
             <PdfText style={styles.collegeSubText}>{config.collegeAddress}</PdfText>
             <PdfText style={styles.collegeSubText}>
               {config.collegeAffiliation}
